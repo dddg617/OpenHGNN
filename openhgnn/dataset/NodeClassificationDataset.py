@@ -19,7 +19,7 @@ class NodeClassificationDataset(BaseDataset):
     So its subclass should contain attributes such as graph, category, num_classes and so on.
     Besides, it should implement the functions *get_labels()* and *get_idx()*.
 
-    Attribute
+    Attributes
     -------------
     g : dgl.DGLHeteroGraph
         The heterogeneous graph.
@@ -29,6 +29,8 @@ class NodeClassificationDataset(BaseDataset):
         The target node  will be classified into num_classes categories.
     has_feature : bool
         Whether the dataset has feature. Default ``False``.
+    multi_label : bool
+        Whether the node has multi label. Default ``False``. For now, only HGBn-IMDB has multi-label.
     """
 
     def __init__(self):
@@ -37,17 +39,18 @@ class NodeClassificationDataset(BaseDataset):
         self.category = None
         self.num_classes = None
         self.has_feature = False
+        self.multi_label = False
         # self.in_dim = None
 
     def get_labels(self):
         r"""
         Description
         ------------
-        The subclass of dataset should overwrite the function. We can get labels of target node.
+        The subclass of dataset should overwrite the function. We can get labels of target nodes through it.
 
         return
         -------
-        train_idx, val_idx, test_idx
+        labels : torch.Tensor
         """
         raise NotImplemented
 
@@ -59,7 +62,7 @@ class NodeClassificationDataset(BaseDataset):
 
         return
         -------
-        train_idx, val_idx, test_idx
+        train_idx, val_idx, test_idx : torch.Tensor, torch.Tensor, torch.Tensor
         """
         raise NotImplemented
 
@@ -70,11 +73,13 @@ class RDF_NodeClassification(NodeClassificationDataset):
     Description
     ------------
     The RDF dataset will be used in task *entity classification*.
-    It contains AIFB/MUTAG/MUTAG/BGS.
-    And we download from dgl and process it.
+    Dataset Name : aifb/ mutag/ bgs/ am.
+    We download from dgl and process it, refer to
+    `RDF datasets <https://docs.dgl.ai/api/python/dgl.data.html#rdf-datasets>`_.
 
-    So if you want to get more information, refer to
-    `RDF datasets <https://docs.dgl.ai/api/python/dgl.data.html#rdf-datasets>`_
+    Notes
+    ------
+    They are all have no feature.
     """
     def __init__(self, dataset_name):
         super(RDF_NodeClassification, self).__init__()
@@ -101,13 +106,24 @@ class RDF_NodeClassification(NodeClassificationDataset):
         return kg, category, num_classes
 
     def get_idx(self, validation=True):
+        r"""
+
+        Parameters
+        ----------
+        validation : bool
+            Whether to split dataset. Default ``True``. If it is False, val_idx will be same with train_idx.
+
+        Returns
+        -------
+            train_idx, val_idx, test_idx
+        """
         train_mask = self.g.nodes[self.category].data.pop('train_mask')
         test_mask = self.g.nodes[self.category].data.pop('test_mask')
         train_idx = th.nonzero(train_mask, as_tuple=False).squeeze()
         test_idx = th.nonzero(test_mask, as_tuple=False).squeeze()
         if validation:
-            val_idx = train_idx[:len(train_idx) // 10]
-            train_idx = train_idx[len(train_idx) // 10:]
+            val_idx = train_idx[:len(train_idx) // 5]
+            train_idx = train_idx[len(train_idx) // 5:]
         else:
             val_idx = train_idx
             train_idx = train_idx
@@ -126,32 +142,29 @@ class HIN_NodeClassification(NodeClassificationDataset):
     r"""
     Description
     ------------
-    The HGB dataset are all used in different papers. So we preprocess them and store them as form of dgl.DGLHeteroGraph.
+    The HIN dataset are all used in different papers. So we preprocess them and store them as form of dgl.DGLHeteroGraph.
     The dataset name combined with paper name through 4(for).
 
-
-
-    Dataset Name
-    ------------
-    acm4NSHE/acm4GTN/acm4NARS/acm_han_raw/academic4HetGNN/dblp4MAGNN/imdb4MAGNN/...
+    Dataset Name :
+    acm4NSHE/ acm4GTN/ acm4NARS/ acm_han_raw/ academic4HetGNN/ dblp4MAGNN/ imdb4MAGNN/ ...
     """
     def __init__(self, dataset_name):
         super(HIN_NodeClassification, self).__init__()
         self.g, self.category, self.num_classes = self.load_HIN(dataset_name)
 
     def load_HIN(self, name_dataset):
-        if name_dataset == 'acm4NSHE':
-            dataset = AcademicDataset(name='acm4NSHE', raw_dir='')
-            category = 'paper'
-            g = dataset[0].long()
-            num_classes = 3
-            self.in_dim = g.ndata['h'][category].shape[1]
-        elif name_dataset == 'dblp':
-            data_path = './openhgnn/dataset/dblp_graph.bin'
+        if name_dataset == 'demo_graph':
+            data_path = './openhgnn/dataset/demo_graph.bin'
             category = 'author'
             num_classes = 4
             g, _ = load_graphs(data_path)
             g = g[0].long()
+            self.in_dim = g.ndata['h'][category].shape[1]
+        elif name_dataset == 'acm4NSHE':
+            dataset = AcademicDataset(name='acm4NSHE', raw_dir='')
+            category = 'paper'
+            g = dataset[0].long()
+            num_classes = 3
             self.in_dim = g.ndata['h'][category].shape[1]
         elif name_dataset == 'dblp4MAGNN':
             dataset = AcademicDataset(name='dblp4MAGNN', raw_dir='')
@@ -165,7 +178,7 @@ class HIN_NodeClassification(NodeClassificationDataset):
             category = 'M'
             g = dataset[0].long()
             num_classes = 3
-            self.in_dim = g.ndata['feat'][category].shape[1]
+            self.in_dim = g.ndata['h'][category].shape[1]
         elif name_dataset == 'imdb4GTN':
             dataset = AcademicDataset(name='imdb4GTN', raw_dir='')
             category = 'movie'
@@ -198,6 +211,13 @@ class HIN_NodeClassification(NodeClassificationDataset):
             else:
                 return NotImplementedError('Unsupported dataset {}'.format(name_dataset))
             return g, category, num_classes
+        elif name_dataset in ['demo']:
+            data_path = './openhgnn/dataset/graph.bin'
+            category = 'author'
+            num_classes = 4
+            g, _ = load_graphs(data_path)
+            g = g[0].long()
+            self.in_dim = g.ndata['h'][category].shape[1]
         # g, _ = load_graphs(data_path)
         # g = g[0]
         return g, category, num_classes
@@ -252,10 +272,8 @@ class HGB_NodeClassification(NodeClassificationDataset):
     Description
     ------------
     The HGB dataset will be used in task *node classification*.
-    And we download from dgl and process it.
 
-    Dataset Name
-    ------------
+    Dataset Name :
     HGBn-ACM/HGBn-DBLP/HGBn-Freebase/HGBn-IMDB
 
     So if you want to get more information, refer to
@@ -273,6 +291,10 @@ class HGB_NodeClassification(NodeClassificationDataset):
             g.nodes['term'].data['h'] = th.eye(g.number_of_nodes('term'))
             self.in_dim = g.ndata['h'][category].shape[1]
             # graph: dgl graph object, label: torch tensor of shape (num_nodes, num_tasks)
+            self.meta_paths = [(('paper', 'paper-author', 'author'), ('author', 'author-paper', 'paper')),
+                               (('paper', 'paper-subject', 'subject'), ('subject', 'subject-paper', 'paper')),
+                               (('paper', 'paper-term', 'term'), ('term', 'term-paper', 'paper'))]
+
         elif dataset_name == 'HGBn-DBLP':
             dataset = HGBDataset(name=dataset_name, raw_dir='')
             g = dataset[0].long()
@@ -280,6 +302,12 @@ class HGB_NodeClassification(NodeClassificationDataset):
             num_classes = 4
             g.nodes['venue'].data['h'] = th.eye(g.number_of_nodes('venue'))
             self.in_dim = g.ndata['h'][category].shape[1]
+            self.meta_paths = [(('author', 'author-paper', 'paper'), ('paper', 'paper-author', 'author')),
+                               (('author', 'author-paper', 'paper'), ('paper', 'paper-term', 'term'),
+                                ('term', 'term-paper', 'paper'), ('paper', 'paper-author', 'author')),
+                               (('author', 'author-paper', 'paper'), ('paper', 'paper-venue', 'venue'),
+                                ('venue', 'venue-paper', 'paper'), ('paper', 'paper-author', 'author')),
+                               ]
             # graph: dgl graph object, label: torch tensor of shape (num_nodes, num_tasks)
         elif dataset_name == 'HGBn-Freebase':
             dataset = HGBDataset(name=dataset_name, raw_dir='')
@@ -287,6 +315,13 @@ class HGB_NodeClassification(NodeClassificationDataset):
             category = 'BOOK'
             num_classes = 8
             self.has_feature = False
+            self.meta_paths = [(('BOOK', 'BOOK-about-ORGANIZATION', 'ORGANIZATION'),
+                                ('ORGANIZATION', 'ORGANIZATION-to-MUSIC', 'MUSIC'),
+                                ('MUSIC', 'MUSIC-in-BOOK', 'BOOK')),
+                               (('BOOK', 'BOOK-about-ORGANIZATION', 'ORGANIZATION'),
+                                ('ORGANIZATION', 'ORGANIZATION-for-BUSINESS', 'BUSINESS'),
+                                ('BUSINESS', 'BUSINESS-about-BOOK', 'BOOK'))]
+
             #self.in_dim = g.ndata['h'][category].shape[1]
             # graph: dgl graph object, label: torch tensor of shape (num_nodes, num_tasks)
         elif dataset_name == 'HGBn-IMDB':
@@ -296,6 +331,9 @@ class HGB_NodeClassification(NodeClassificationDataset):
             num_classes = 5
             g.nodes['keyword'].data['h'] = th.eye(g.number_of_nodes('keyword'))
             self.in_dim = g.ndata['h'][category].shape[1]
+            self.meta_paths = [(('movie', 'movie->actor', 'actor'), ('actor', 'actor->movie', 'movie')),
+                               (('movie', 'movie->director', 'director'), ('director', 'director->movie', 'movie')),
+                               (('movie', 'movie->keyword', 'keyword'), ('keyword', 'keyword->movie', 'movie'))]
             # RuntimeError: result type Float can't be cast to the desired output type Long
             self.multi_label = True
         else:
@@ -313,8 +351,8 @@ class HGB_NodeClassification(NodeClassificationDataset):
             train_idx = th.tensor(train.indices)
             test_idx = th.tensor(test.indices)
             if validation:
-                valid_idx = train_idx[:len(train_idx) // 10]
-                train_idx = train_idx[len(train_idx) // 10:]
+                valid_idx = train_idx[:len(train_idx) // 5]
+                train_idx = train_idx[len(train_idx) // 5:]
             else:
                 valid_idx = train_idx
                 train_idx = train_idx
@@ -340,7 +378,14 @@ class HGB_NodeClassification(NodeClassificationDataset):
         return self.train_idx, self.valid_idx, self.test_idx
 
     def get_labels(self):
-        # RuntimeError: Expected object of scalar type Long but got scalar type Float for argument #2 'target' in call to _thnn_nll_loss_forward
+        r"""
+        Notes
+        ------
+        In general, the labels are th.FloatTensor.
+        But for multi-label dataset, they should be th.LongTensor. Or it will raise
+        RuntimeError: Expected object of scalar type Long but got scalar type Float for argument #2 target' in call to _thnn_nll_loss_forward
+        """
+
         if 'labels' in self.g.nodes[self.category].data:
             labels = self.g.nodes[self.category].data.pop('labels').long()
         elif 'label' in self.g.nodes[self.category].data:
@@ -351,15 +396,26 @@ class HGB_NodeClassification(NodeClassificationDataset):
         return self.labels
 
     def save_results(self, logits, file_path):
+        r"""
+        To save test results of HGBn.
+
+        Parameters
+        ----------
+        logits: th.Tensor
+            The prediction of target nodes.
+        file_path : str
+            The path to save file.
+
+        """
         test_logits = logits[self.test_idx]
-        if self.dataset_name == 'HGBn-imdb':
+        if self.dataset_name == 'HGBn-IMDB':
             pred = (test_logits.cpu().numpy() > 0).astype(int)
             multi_label = []
             for i in range(pred.shape[0]):
                 label_list = [str(j) for j in range(pred[i].shape[0]) if pred[i][j] == 1]
                 multi_label.append(','.join(label_list))
             pred = multi_label
-        elif self.dataset_name in ['HGBn-acm', 'HGBn-dblp', 'HGBn-freebase']:
+        elif self.dataset_name in ['HGBn-ACM', 'HGBn-DBLP', 'HGBn-Freebase']:
             pred = test_logits.cpu().numpy().argmax(axis=1)
             pred = np.array(pred)
         else:

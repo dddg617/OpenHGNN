@@ -2,9 +2,12 @@ import os
 import torch
 from abc import ABC, abstractmethod
 
+from ..tasks import build_task
+from ..layers.HeteroLinear import HeteroFeature
+from ..utils import get_nodes_dict
+
 
 class BaseFlow(ABC):
-
     def __init__(self, args):
         super(BaseFlow, self).__init__()
         self.evaluator = None
@@ -19,22 +22,69 @@ class BaseFlow(ABC):
                                                 f"{args.model}_{args.dataset}.pt")
             else:
                 self._checkpoint = None
-        if args.dataset[:3] == 'HGB':
-            args.HGB_results_path = os.path.join("./openhgnn/output/{}/{}.txt".format(args.model, args.dataset[5:]))
+
+        if not hasattr(args, 'HGB_results_path') and args.dataset[:3] == 'HGB':
+            args.HGB_results_path = os.path.join("./openhgnn/output/{}/{}_{}.txt".format(args.model, args.dataset[5:], args.seed))
+
+        self.args = args
+        self.model_name = args.model
+        self.device = args.device
+        self.task = build_task(args)
+        self.hg = self.task.get_graph().to(self.device)
+        self.args.meta_paths = self.task.dataset.meta_paths
+        self.patience = args.patience
+        self.max_epoch = args.max_epoch
+        self.optimizer = None
+        self.loss_fn = self.task.get_loss_fn()
+
+    def preprocess_feature(self):
+        r"""
+        Every trainerflow should run the preprocess_feature if you want to get a feature preprocessing.
+        The Parameters in input_feature will be added into optimizer and input_feature will be added into the model.
+
+        Attributes
+        -----------
+        input_feature : HeteroFeature
+            It will return the processed feature if call it.
+
+        """
+        if hasattr(self.args, 'activation'):
+            act = self.args.activation
+        else:
+            act = None
+        if isinstance(self.hg.ndata['h'], dict):
+            self.input_feature = HeteroFeature(self.hg.ndata['h'], get_nodes_dict(self.hg), self.args.hidden_dim, act=act).to(self.device)
+        elif isinstance(self.hg.ndata['h'], torch.Tensor):
+            self.input_feature = HeteroFeature({self.hg.ntypes[0]: self.hg.ndata['h']}, get_nodes_dict(self.hg), self.args.hidden_dim, act=act).to(self.device)
+        self.optimizer.add_param_group({'params': self.input_feature.parameters()})
+        self.model.add_module('feature', self.input_feature)
 
     @abstractmethod
     def train(self):
         pass
 
     def _full_train_step(self):
-        # train with a full_batch graph
+        r"""
+        Train with a full_batch graph
+        """
         raise NotImplementedError
 
     def _mini_train_step(self):
-        # train with a mini_batch seed nodes graph
+        r"""
+        Train with a mini_batch seed nodes graph
+        """
         raise NotImplementedError
 
-    def _test_step(self):
+    def _full_test_step(self):
+        r"""
+        Test with a full_batch graph
+        """
+        raise NotImplementedError
+
+    def _mini_test_step(self):
+        r"""
+        Test with a mini_batch seed nodes graph
+        """
         raise NotImplementedError
 
     def load_from_pretrained(self):

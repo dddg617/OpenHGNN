@@ -9,7 +9,7 @@ class GeneralLinear(nn.Module):
     ------------
     General Linear, combined with activation, normalization(batch and L2), dropout and so on.
 
-    Parameter
+    Parameters
     ------------
     in_features : int
         size of each input sample, which is fed into nn.Linear
@@ -66,13 +66,14 @@ class HeteroLinearLayer(nn.Module):
     Even though they may have same dimension, they may have different semantic in every dimension.
     So we use a linear layer for each node type to map all node features to a shared feature space.
 
-    Parameter
+    Parameters
     ----------
     linear_dict : dict
         Key of dict can be node type(node name), value of dict is a list contains input dimension and output dimension.
 
     Examples
     ----------
+
     >>>import torch as th
     >>>linear_dict = {}
     >>>linear_dict['author'] = [110, 64]
@@ -82,6 +83,7 @@ class HeteroLinearLayer(nn.Module):
     >>>h_dict['paper'] = th.tensor(5, 128)
     >>>layer = HeteroLinearLayer(linear_dict)
     >>>out_dict = layer(h_dict)
+
     """
     def __init__(self, linear_dict, act=None, dropout=0.0, has_l2norm=True, has_bn=True, **kwargs):
         super(HeteroLinearLayer, self).__init__()
@@ -93,7 +95,7 @@ class HeteroLinearLayer(nn.Module):
 
     def forward(self, dict_h: dict) -> dict:
         r"""
-        Parameter
+        Parameters
         ----------
         dict_h : dict
             A dict of heterogeneous feature
@@ -115,21 +117,30 @@ class HeteroMLPLayer(nn.Module):
     HeteroMLPLayer contains multiple GeneralLinears, different with HeteroLinearLayer.
     The latter contains only one layer.
 
-    Parameter
+    Parameters
     ----------
     linear_dict : dict
         Key of dict can be node type(node name), value of dict is a list contains input, hidden and output dimension.
 
     """
-    def __init__(self, linear_dict, act=None, dropout=0.0, has_l2norm=True, has_bn=True, **kwargs):
+    def __init__(self, linear_dict, act=None, dropout=0.0, has_l2norm=True, has_bn=True, final_act=True, **kwargs):
         super(HeteroMLPLayer, self).__init__()
         self.layers = nn.ModuleDict({})
         for name, linear_dim in linear_dict.items():
             nn_list = []
-            for i in range(len(linear_dim)-1):
+            n_layer = len(linear_dim) - 1
+            for i in range(n_layer):
                 in_dim = linear_dim[i]
                 out_dim = linear_dim[i+1]
-                layer = GeneralLinear(in_features=in_dim, out_features=out_dim, act=act,
+                if i == n_layer - 1:
+                    if final_act:
+                        layer = GeneralLinear(in_features=in_dim, out_features=out_dim, act=act,
+                                              dropot=dropout, has_l2norm=has_l2norm, has_bn=has_bn)
+                    else:
+                        layer = GeneralLinear(in_features=in_dim, out_features=out_dim, act=None,
+                                          dropot=dropout, has_l2norm=has_l2norm, has_bn=has_bn)
+                else:
+                    layer = GeneralLinear(in_features=in_dim, out_features=out_dim, act=act,
                                       dropot=dropout, has_l2norm=has_l2norm, has_bn=has_bn)
 
                 nn_list.append(layer)
@@ -188,7 +199,7 @@ class HeteroFeature(nn.Module):
     hetero_linear : HeteroLinearLayer
         A heterogeneous linear layer to transform original feature.
     """
-    def __init__(self, h_dict, n_nodes_dict, embed_size, need_trans=True, all_feats=True):
+    def __init__(self, h_dict, n_nodes_dict, embed_size, act=None, need_trans=True, all_feats=True):
         """
 
         @param h_dict:
@@ -217,7 +228,7 @@ class HeteroFeature(nn.Module):
             else:
                 linear_dict[ntype] = [h.shape[1], self.embed_size]
         if need_trans:
-            self.hetero_linear = HeteroLinearLayer(linear_dict)
+            self.hetero_linear = HeteroLinearLayer(linear_dict, act=act)
 
     def forward(self):
         r"""
@@ -227,15 +238,27 @@ class HeteroFeature(nn.Module):
 
         Returns
         -------
-        h_dict : dict
+        dict [str, th.Tensor]
             The output feature dictionary of feature.
         """
-        h_dict = {}
+        out_dict = {}
         for ntype, _ in self.n_nodes_dict.items():
             if self.h_dict.get(ntype) is None:
-                h_dict[ntype] = self.embed_dict[ntype]
+                out_dict[ntype] = self.embed_dict[ntype]
         if self.need_trans:
-            h_dict.update(self.hetero_linear(self.h_dict))
+            out_dict.update(self.hetero_linear(self.h_dict))
         else:
-            h_dict.update(self.h_dict)
-        return h_dict
+            out_dict.update(self.h_dict)
+        return out_dict
+
+    def forward_nodes(self, nodes_dict):
+        out_feature = {}
+        for ntype, nid in nodes_dict.items():
+            if self.h_dict.get(ntype) is None:
+                out_feature[ntype] = self.embed_dict[ntype][nid]
+            else:
+                if self.need_trans:
+                    out_feature[ntype] = self.hetero_linear(self.h_dict)[ntype][nid]
+                else:
+                    out_feature[ntype] = self.h_dict[ntype][nid]
+        return out_feature

@@ -1,16 +1,15 @@
 import dgl
 import numpy as np
-from dgl.data.knowledge_graph import load_data
 import torch as th
+from dgl.data.utils import load_graphs
+from dgl.data.knowledge_graph import load_data
 from . import BaseDataset, register_dataset
 from . import AcademicDataset, HGBDataset
-from dgl.data.utils import load_graphs
 
 
 @register_dataset('link_prediction')
 class LinkPredictionDataset(BaseDataset):
     """
-
     metric: Accuracy, multi-label f1 or multi-class f1. Default: `accuracy`
     """
     def __init__(self,):
@@ -94,6 +93,23 @@ class HIN_LinkPrediction(LinkPredictionDataset):
 
 @register_dataset('HGBl_link_prediction')
 class HGB_LinkPrediction(LinkPredictionDataset):
+    r"""
+    The HGB dataset will be used in task *link prediction*.
+
+    Dataset Name :
+    HGBn-amazon/HGBn-LastFM/HGBn-PubMed
+
+    So if you want to get more information, refer to
+    `HGB datasets <https://github.com/THUDM/HGB>`_
+
+    Attributes
+    -----------
+    has_feature : bool
+        Whether the dataset has feature. Except HGBl-LastFM, others have features.
+    target_link : list of tuple[canonical_etypes]
+        The etypes of test link. HGBl-amazon has two etypes of test link. other has only one.
+
+    """
     def __init__(self, dataset_name):
         super(HGB_LinkPrediction, self).__init__()
         self.dataset_name = dataset_name
@@ -102,19 +118,101 @@ class HGB_LinkPrediction(LinkPredictionDataset):
             dataset = HGBDataset(name=dataset_name, raw_dir='')
             g = dataset[0].long()
             self.has_feature = True
+            self.target_link = [('product', 'product-product-0', 'product'),
+                                ('product', 'product-product-1', 'product')]
+            self.link = [0, 1]
+            self.node_type = ["product"]
+            self.test_edge_type = {'product-product-0': 0, 'product-product-1': 1}
+            self.meta_paths = [(('product', 'product-product-0', 'product'), ('product', 'product-product-1', 'product')),
+                               (('product', 'product-product-1', 'product'), ('product', 'product-product-0', 'product')),
+                               ]
+
         elif dataset_name == 'HGBl-LastFM':
             dataset = HGBDataset(name=dataset_name, raw_dir='')
             g = dataset[0].long()
             self.has_feature = False
+            self.target_link = [('user', 'user-artist', 'artist')]
+            self.node_type = ['user', 'artist', 'tag']
+            self.test_edge_type = {'user-artist': 0}
+
+
         elif dataset_name == 'HGBl-PubMed':
             dataset = HGBDataset(name=dataset_name, raw_dir='')
             g = dataset[0].long()
             self.has_feature = True
+            self.target_link = [('1', '1_to_1', '1')]
+            self.node_type = ['0', '1', '2', '3']
+            self.test_edge_type = {'1_to_1': 2}
 
         self.g = g
+        self.shift_dict = self.calculate_node_shift()
 
     def load_link_pred(self, path):
         return
+
+    def calculate_node_shift(self):
+        node_shift_dict = {}
+        count = 0
+        for type in self.node_type:
+            node_shift_dict[type] = count
+            count += self.g.num_nodes(type)
+        return node_shift_dict
+
+    def get_idx(self):
+        r"""
+        Get graphs for train, valid or test.
+
+        The dataset has not validation_mask, so we split train edges randomly.
+        """
+        val_edge_dict = {}
+        test_edge_dict = {}
+        out_ntypes = []
+        train_graph = self.g
+        val_ratio = 0.1
+        for etype in self.target_link:
+            train_mask = self.g.edges[etype].data['train_mask'].squeeze()
+            train_index = th.nonzero(train_mask).squeeze()
+            random_int = th.randperm(len(train_index))[:int(len(train_index) * val_ratio)]
+            val_index = train_index[random_int]
+            val_edge = self.g.find_edges(val_index, etype)
+
+            test_mask = self.g.edges[etype].data['test_mask'].squeeze()
+            test_index = th.nonzero(test_mask).squeeze()
+            test_edge = self.g.find_edges(test_index, etype)
+
+            val_edge_dict[etype] = val_edge
+            test_edge_dict[etype] = test_edge
+            out_ntypes.append(etype[0])
+            out_ntypes.append(etype[2])
+
+            train_graph = dgl.remove_edges(train_graph, th.cat((val_index, test_index)), etype)
+        self.out_ntypes = set(out_ntypes)
+        val_graph = dgl.heterograph(val_edge_dict,
+                                         {ntype: self.g.number_of_nodes(ntype) for ntype in set(out_ntypes)})
+        test_graph = dgl.heterograph(test_edge_dict,
+                                          {ntype: self.g.number_of_nodes(ntype) for ntype in set(out_ntypes)})
+
+        return train_graph, val_graph, test_graph
+
+    def save_results(self, hg, score, file_path):
+        with hg.local_scope():
+            src_list = []
+            dst_list = []
+            edge_type_list = []
+            for etype in hg.canonical_etypes:
+                edges = hg.edges(etype=etype)
+                src_id = edges[0]+self.shift_dict[etype[0]]
+                dst_id = edges[1]+self.shift_dict[etype[2]]
+                src_list.append(src_id)
+                dst_list.append(dst_id)
+                edge_type_list.append(th.full((src_id.shape[0],), self.test_edge_type[etype[1]]))
+
+            src_list = th.cat(src_list)
+            dst_list = th.cat(dst_list)
+            edge_type_list = th.cat(edge_type_list)
+            with open(file_path, "w") as f:
+                for l, r, edge_type, c in zip(src_list, dst_list, edge_type_list,score):
+                    f.write(f"{l}\t{r}\t{edge_type}\t{c}\n")
 
 
 def build_graph_from_triplets(num_nodes, num_rels, triplets):

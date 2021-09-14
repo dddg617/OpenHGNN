@@ -1,6 +1,8 @@
 import importlib
 from .NEW_model import MLP_follow_model
 from .base_model import BaseModel
+import sys
+sys.path.append("..")
 
 MODEL_REGISTRY = {}
 
@@ -52,6 +54,7 @@ SUPPORTED_MODELS = {
     "CompGCN": "openhgnn.models.CompGCN",
     "HetGNN": "openhgnn.models.HetGNN",
     'RGCN': 'openhgnn.models.RGCN',
+    "RGAT": 'openhgnn.models.RGAT',
     'RSHN': 'openhgnn.models.RSHN',
     'Metapath2vec': 'openhgnn.models.Metapath2vec',
     'HAN': 'openhgnn.models.HAN',
@@ -63,6 +66,9 @@ SUPPORTED_MODELS = {
     'NSHE': 'openhgnn.models.NSHE',
     'NARS': 'openhgnn.models.NARS',
     'RHGNN': 'openhgnn.models.RHGNN',
+    'HPN': 'openhgnn.models.HPN',
+    'KGCN': 'openhgnn.models.KGCN',
+    'HGSL': 'openhgnn.models.HGSL',
     'GCN': 'space4hgnn.homo_models.GCN',
     'GAT': 'space4hgnn.homo_models.GAT',
     'homo_GNN': 'space4hgnn.homo_models.homo_GNN',
