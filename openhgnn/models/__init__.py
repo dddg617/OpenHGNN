@@ -153,6 +153,9 @@ __all__ = [
     'general_HGNN',
     'HDE',
     'SimpleHGN',
-    'GATNE'
+    'GATNE',
+    'HetSANN',
+    'ieHGCN',
+    'HGAT'
 ]
 classes = __all__

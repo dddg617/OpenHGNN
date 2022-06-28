@@ -576,7 +576,6 @@ class Config(object):
             self.lr = conf.getfloat("HGAT", "lr")
             self.max_epoch = conf.getint("HGAT", "max_epoch")
             self.seed = conf.getint("HGAT", "seed")
-            self.attn_dim = conf.getint("HGAT", "attn_dim")
             self.num_layers = conf.getint("HGAT","num_layers")
             self.mini_batch_flag = False
             self.hidden_dim = conf.getint("HGAT", "hidden_dim")

@@ -6,6 +6,7 @@
 |SimpleHGN(KDD 2021)|[Are we really making much progress? Revisiting, benchmarking,and refining heterogeneous graph neural networks](https://dl.acm.org/doi/pdf/10.1145/3447548.3467350)|
 |HetSANN(AAAI 2020)|[An Attention-Based Graph Neural Network for Heterogeneous Structural Learning](https://arxiv.org/abs/1912.10832)|
 |ieHGCN(TKDE 2021)|[Interpretable and Efficient Heterogeneous Graph Convolutional Network](https://arxiv.org/pdf/2005.13183.pdf)|
+|HGAT(EMNLP 2019)|[Heterogeneous Graph Attention Networks for Semi-supervised Short Text Classification](https://dl.acm.org/doi/abs/10.1145/3450352)|
 
 ## Attention mechanism
 This part, we will give the definition of attention methanism based on **GAT** and **Transformer**.
@@ -57,7 +58,7 @@ Parameters:
 - x_type(tensor): 1D tensor storing the type of the element in **x**.
 - sorted_by_type(boolean): Whether the inputs have been sorted by the types. Forward on pre-sorted inputs may be faster.
 
-So this API can be used when we use **to_homogeneous** to convert a heterogeneous graph to a homogeneous graph.
+So this API can be used when we use **to_homogeneous** to convert a heterogeneous graph into a homogeneous graph.
 
 ### [HeteroLinear](https://docs.dgl.ai/generated/dgl.nn.pytorch.HeteroLinear.html)
 
@@ -109,6 +110,7 @@ Based on HeteroGraphConv, we divide the attention model into two categories: Dir
 |HGT|$W_{Q_{\phi{(s)}}}h_s W^{ATT}_{\psi{(r)}}(W_{K_{\phi{(t)}}}h_t)^T$|
 |SimpleHGN|$LeakyReLU(a^T[Wh_s \parallel Wh_t \parallel W_r r_{\psi(<s,t>)}])$|
 |HetSANN|$LeakyReLU([W_{\phi(t),\phi(s)} h_s\parallel W_{\phi(t),\phi(s)} h_t]a_r)$|
+|HGAT|$\sigma(a^T\cdot\alpha_{\tau}[h_s\parallel h_t])$|
 
 These models only have one aggregation process and do not distinguish between types of edges when aggregating, so they are not suitable for HeteroGraphConv.
 
@@ -125,7 +127,7 @@ This model has two aggregation process and distinguish between types of edges wh
 ## Implement Details
 
 ### Direct-Aggregation models
-- We first implement the convolution layer of the model SimpleHGN, and HetSANN. The convolutional layer of HGT we use is [hgtconv](https://docs.dgl.ai/generated/dgl.nn.pytorch.conv.HGTConv.html?highlight=hgtconv#dgl.nn.pytorch.conv.HGTConv). The **\_\_init\_\_** parameters can be different as the models need different parameters.
+- We first implement the convolution layer of the model SimpleHGN, HetSANN and HGT. The convolutional layer of HGT we use is [hgtconv](https://docs.dgl.ai/generated/dgl.nn.pytorch.conv.HGTConv.html?highlight=hgtconv#dgl.nn.pytorch.conv.HGTConv). The **\_\_init\_\_** parameters can be different as the models need different parameters.
 The parameters of the **forward** part are the same: `g` is the homogeneous graph, `h` is the features, `ntype` denotes the type of each node, `etype` denotes the type of each edge, `presorted` tells if the `ntype` or `etype` is presorted to use [TypedLinear](https://docs.dgl.ai/generated/dgl.nn.pytorch.TypedLinear.html) in **dgl.nn** conveniently. If we use [dgl.to_homogeneous](https://docs.dgl.ai/generated/dgl.to_homogeneous.html?highlight=to_homogeneous#dgl.to_homogeneous) to get the features, the features are presorted.
 
 - Then, we use the convolution layers to implement corresponding models. We need [dgl.to_homogeneous](https://docs.dgl.ai/generated/dgl.to_homogeneous.html?highlight=to_homogeneous#dgl.to_homogeneous) to get a homogeneous graph as when we use [edge_softmax](https://docs.dgl.ai/generated/dgl.nn.functional.edge_softmax.html?highlight=edge_softmax), we put all the edges together to calculate the attention coefficient instead of distinguishing the type of edges. 
@@ -225,7 +227,7 @@ Evaluation metric: Micro/Macro-F1
 
 ## Hyper-parameter specific to the model
 
-You can modify the parameters [HGT], [SimpleHGN], [HetSANN], [ieHGCN] in openhgnn/config.ini. 
+You can modify the parameters [HGT], [SimpleHGN], [HetSANN], [HGAT], [ieHGCN] in openhgnn/config.ini. 
 ## More
 
 #### Contirbutor
